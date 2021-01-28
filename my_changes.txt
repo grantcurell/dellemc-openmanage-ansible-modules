@@ -1,3 +1,13 @@
-- Updated module to use odata filters instead of exhaustively searching arrays
 - Updated the module to remove the requirement for mutual exclusivity
-- Added a get_targets function to ome.py which creates an array of all target ids
+- Added a get_targets function to ome.py which creates an array of all target ids (for service tags, device names, idrac ips, and groups)
+- Added a get_device_id function that accepts a service tag, idrac ip, or device name and resolves it to a device ID using odata filters instead of an exhaustive list search
+- Fixed a bug where groups with more than a page size worth of devices was not handled correctly
+- Addressed #171
+- Added an InputError exception class which can pass data regarding failures in user input
+- Added the ability to use idrac IPs to identify a device
+- Added the ability to use a device name to identify a device
+- Updated module documentation to reflect changes
+- Added Google-style docstring comments for all functions in ome_firmware_baseline_compliance_info.py
+- Removed the functions _get_device_id_from_service_tags, get_device_ids_from_group_ids, get_device_ids_from_group_names, get_identifiers because the functionality is now all centralized in the ome module.
+- Removed the function get_baselines_report_by_device_ids because it was simplified to only two lines and is not reusable in other code
+- Removed the function get_baseline_compliance_reports because it could be simplified to 5 lines and is not reusable in other code

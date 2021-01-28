@@ -25,6 +25,17 @@ SESSION_RESOURCE_COLLECTION = {
 }
 
 
+class InputError(Exception):
+    """
+    Exception raised for errors in the input.
+
+    Attributes:
+        message (str): explanation of the error. Preferably includes the input which caused the failure.
+    """
+
+    def __init__(self, message):
+        self.message = message
+
 class OpenURLResponse(object):
     """Handles HTTPResponse"""
 
@@ -229,16 +240,12 @@ class RestOME(object):
         Resolves a service tag, idrac IP or device name to a device ID
 
         Args:
-            service_tag: (optional) The service tag of a host
-            device_idrac_ip: (optional) The idrac IP of a host
-            device_name: (optional): The name of a host
+            service_tag: The service tag of a host
+            device_idrac_ip: The idrac IP of a host
+            device_name: The name of a host
 
         Returns: Returns the device ID or -1 if it couldn't be found
         """
-
-        if not service_tag and not device_idrac_ip and not device_name:
-            print("No argument provided to get_device_id. Must provide service tag, device idrac IP or device name.")
-            return -1
 
         # If the user passed a device name, resolve that name to a device ID
         if device_name:
@@ -251,8 +258,6 @@ class RestOME(object):
             else:
                 return -1
 
-            device_id = device_id[0]['Id']
-
         elif service_tag:
             query = "DeviceServiceTag eq \'%s\'" % service_tag
             response = self.invoke_request("GET", "DeviceService/Devices", query_param={"$filter": query})
@@ -263,8 +268,6 @@ class RestOME(object):
                 device_id = value[0]['Id']
             else:
                 return -1
-
-            device_id = device_id[0]['Id']
 
         elif device_idrac_ip:
             device_id = -1
@@ -312,42 +315,71 @@ class RestOME(object):
         except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
             raise err
 
-    def get_targets(self, service_tags: str, idrac_ips: str, device_names: str):
+    def get_targets(self, service_tags: list = None, idrac_ips: list = None, device_names: list = None,
+                    groups: list = None) -> list:
+        """
+        Converts the below types of input into numerical IDs which OME can consume
+
+        Args:
+            service_tags: A list of service tags to convert to IDs
+            idrac_ips: A list of idrac_ips to convert to IDs
+            device_names: A list of device names to convert to IDs
+            groups: A list of groups from which to pull device IDs
+
+        Returns: A list of ints where each int is a device ID
+
+        """
 
         target_ids = []
 
         if service_tags:
-            service_tags = service_tags.split(',')
             for service_tag in service_tags:
-                target = self.get_device_id_from_service_tag(service_tag)
+                target = self.get_device_id(service_tag=service_tag)
                 if target != -1:
                     target_ids.append(target)
                 else:
-                    print("Could not resolve ID for: " + service_tag)
-        else:
-            service_tags = None
+                    raise InputError("Could not resolve ID for: " + service_tag)
 
         if idrac_ips:
-            device_idrac_ips = idrac_ips.split(',')
-            for device_idrac_ip in device_idrac_ips:
-                target = get_device_id(headers, args.ip, device_idrac_ip=device_idrac_ip)
+            for device_idrac_ip in idrac_ips:
+                target = self.get_device_id(device_idrac_ip=device_idrac_ip)
                 if target != -1:
                     target_ids.append(target)
                 else:
-                    print("Could not resolve ID for: " + device_idrac_ip)
-        else:
-            device_idrac_ips = None
+                    raise InputError("Could not resolve ID for: " + device_idrac_ip)
 
-        if args.device_names:
-            device_names = args.device_names.split(',')
+        if device_names:
             for device_name in device_names:
-                target = get_device_id(headers, args.ip, device_name=device_name)
+                target = self.get_device_id(device_name=device_name)
                 if target != -1:
                     target_ids.append(target)
                 else:
-                    print("Could not resolve ID for: " + device_name)
-        else:
-            device_names = None
+                    raise InputError("Could not resolve ID for: " + device_name)
+
+        if groups:
+
+            for group in groups:
+
+                query = "Name eq '%s'" % group
+                response = self.invoke_request("GET", "GroupService/Groups", query_param={"$filter": query})
+                value = response.json_data.get("value", [])
+
+                if len(value) < 1:
+                    raise InputError("No groups were found with name " + group)
+
+                response = self.get_all_items_with_pagination("GroupService/Groups/(%s)/Devices" % value[0]['Id']) #TODO NEED TO test
+                value = response.get("value", [])
+
+                if len(value) < 1:
+                    raise InputError("Error: There was a problem retrieving the devices for group " + group +
+                                     ". Exiting")
+
+                target_ids = target_ids + value
+
+        # Eliminate any duplicate IDs in the list
+        target_ids = list(dict.fromkeys(target_ids))
+
+        return target_ids
 
     def get_device_type(self):
         """

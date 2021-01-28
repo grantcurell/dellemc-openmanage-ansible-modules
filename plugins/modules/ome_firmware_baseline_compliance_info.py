@@ -32,37 +32,49 @@ options:
     type: str
   device_ids:
     description:
-        - A list of unique identifier for device based compliance report.
-        - Either I(device_ids), I(device_service_tags) or I(device_group_names)
-          is required to generate device based compliance report.
-        - I(device_ids) is mutually exclusive with I(device_service_tags),
-          I(device_group_names) and I(baseline_name).
+        - A list of unique identifiers for device based compliance report.
+        - At least one of I(device_ids), I(device_service_tags), I(device_names), I(device_idrac_ips), 
+          or I(device_group_names) is required to generate device based compliance report.
         - Devices without reports are ignored.
     type: list
     elements: int
   device_service_tags:
     description:
         - A list of service tags for device based compliance report.
-        - Either I(device_ids), I(device_service_tags) or I(device_group_names)
-          is required to generate device based compliance report.
-        - I(device_service_tags) is mutually exclusive with I(device_ids),
-          I(device_group_names) and I(baseline_name).
+        - At least one of I(device_ids), I(device_service_tags), I(device_names), I(device_idrac_ips), 
+          or I(device_group_names) is required to generate device based compliance report.
+        - Devices without reports are ignored.
+    type: list
+    elements: str
+  device_names:
+    description:
+        - A list of device names for device based compliance report.
+        - At least one of I(device_ids), I(device_service_tags), I(device_names), I(device_idrac_ips), 
+          or I(device_group_names) is required to generate device based compliance report.
+        - Devices without reports are ignored.
+    type: list
+    elements: str
+  device_idrac_ips:
+    description:
+        - A list of idrac IPs for device based compliance report.
+        - At least one of I(device_ids), I(device_service_tags), I(device_names), I(device_idrac_ips), 
+          or I(device_group_names) is required to generate device based compliance report.
         - Devices without reports are ignored.
     type: list
     elements: str
   device_group_names:
     description:
         - A list of group names for device based compliance report.
-        - Either I(device_ids), I(device_service_tags) or I(device_group_names)
-          is required to generate device based compliance report.
-        - I(device_group_names) is mutually exclusive with I(device_ids),
-          I(device_service_tags) and I(baseline_name).
+        - At least one of I(device_ids), I(device_service_tags), I(device_names), I(device_idrac_ips), 
+          or I(device_group_names) is required to generate device based compliance report.
         - Devices without reports are ignored.
     type: list
     elements: str
 requirements:
     - "python >= 2.7.5"
-author: "Sajna Shetty(@Sajna-Shetty)"
+author: 
+    - "Sajna Shetty(@Sajna-Shetty)"
+    - "Grant Curell(@grantcurell)"
 notes:
     - Run this module from a system that has direct access to DellEMC OpenManage Enterprise.
     - This module supports C(check_mode).
@@ -223,6 +235,8 @@ import json
 from ansible.module_utils.basic import AnsibleModule
 # from ansible_collections.dellemc.openmanage.plugins.module_utils.ome import RestOME TODO - change this back
 from plugins.module_utils.ome import RestOME
+from plugins.module_utils.ome import InputError
+# TODO - need to add InputError here
 # from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError TODO - change this back
 from urllib.error import URLError, HTTPError
 from ansible.module_utils.urls import ConnectionError, SSLValidationError
@@ -235,75 +249,17 @@ baselines_compliance_report_path = "UpdateService/Baselines({Id})/DeviceComplian
 group_service_path = "GroupService/Groups"
 
 
-def _get_device_id_from_service_tags(service_tags, rest_obj, module):
+def get_baseline_id_from_name(rest_obj: RestOME, module: AnsibleModule) -> int:
     """
-    Get device ids from device service tag
-    Returns :dict : device_id to service_tag map
-    :arg service_tags: service tag
-    :arg rest_obj: RestOME class object in case of request with session.
-    :returns: dict eg: {1345:"MXL1245"}
+    Resolves the name of a baseline to an ID
+
+    Args:
+        rest_obj: A RestOME object used for handling communication to OME
+        module: A handle to AnsibleModule allowing the module to issue error messages
+
+    Returns: The integer ID of the baseline
+
     """
-    try:
-        service_tag_dict = {}
-        for service_tag in service_tags:
-            device_id = rest_obj.get_device_id_from_service_tag(service_tag)
-            if device_id is not None:
-                service_tag_dict.update({device_id["Id"]: service_tag})
-                return service_tag_dict
-            else:
-                module.fail_json(msg="Failed to fetch the service tag " + service_tag)
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
-
-
-def get_device_ids_from_group_ids(module, grou_id_list, rest_obj):
-    try:
-        device_id_list = []
-        for group_id in grou_id_list:
-            group_id_path = group_service_path + "({group_id})/Devices".format(group_id=group_id)
-            resp = rest_obj.invoke_request('GET', group_id_path)
-            if resp.success:
-                grp_list_value = resp.json_data['value']
-                for device_item in grp_list_value:
-                    device_id_list.append(device_item["Id"])
-            else:
-                module.fail_json(msg="Failed to fetch the device ids from specified I(device_group_names).")
-        return device_id_list
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
-
-
-def get_device_ids_from_group_names(module, rest_obj):
-    try:
-        grp_name_list = module.params.get("device_group_names")
-        resp = rest_obj.invoke_request('GET', group_service_path)
-        group_id_list = []
-        if resp.success:
-            grp_list_resp = resp.json_data['value']
-            for name in grp_name_list:
-                for group in grp_list_resp:
-                    if group["Name"] == name:
-                        group_id_list.append(group['Id'])
-                        break
-        else:
-            module.fail_json(msg="Failed to fetch the specified I(device_group_names).")
-        return get_device_ids_from_group_ids(module, group_id_list, rest_obj)
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
-
-
-def get_identifiers(rest_obj, module):
-    if module.params.get("device_ids") is not None:
-        return module.params.get("device_ids"), "device_ids"
-    elif module.params.get("device_group_names") is not None:
-        return get_device_ids_from_group_names(module, rest_obj), "device_group_names"
-    else:
-        service_tags = module.params.get("device_service_tags")
-        service_tags_mapper = _get_device_id_from_service_tags(service_tags, rest_obj, module)
-        return list(service_tags_mapper.keys()), "device_service_tags"
-
-
-def get_baseline_id_from_name(rest_obj, module):
     try:
         baseline_name = module.params.get("baseline_name")
         baseline_id = 0
@@ -327,32 +283,20 @@ def get_baseline_id_from_name(rest_obj, module):
         raise err
 
 
-def get_baselines_report_by_device_ids(rest_obj, module):
-    try:
-        device_ids, identifier = get_identifiers(rest_obj, module)
-        if device_ids or identifier == "device_ids":
-            resp = rest_obj.invoke_request('POST', baselines_report_by_device_ids_path, data={"Ids": device_ids})
-            return resp.json_data
-        else:
-            identifier_map = {
-                "device_group_names": "Device details not available as the group name(s) provided are invalid.",
-                "device_service_tags": "Device details not available as the service tag(s) provided are invalid."
-            }
-            message = identifier_map[identifier]
-            module.fail_json(msg=message)
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
-
-
-def validate_inputs(module):
+def validate_inputs(module: AnsibleModule):
+    """ Validates that the user provided at least one of the required arguments """
     module_params = module.params
     device_service_tags = module_params.get("device_service_tags")
+    device_names = module_params.get("device_names")
+    device_idrac_ips = module_params.get("device_idrac_ips")
     device_group_names = module_params.get("device_group_names")
     device_ids = module_params.get("device_ids")
     baseline_name = module_params.get("baseline_name")
-    if all(not identifer for identifer in [device_ids, device_service_tags, device_group_names, baseline_name]):
-        module.fail_json(msg="one of the following is required: device_ids, device_service_tags, "
-                             "device_group_names, baseline_name to generate device based compliance report.")
+    if all(not identifer for identifer in [device_ids, device_service_tags, device_group_names, device_names,
+                                           device_idrac_ips, baseline_name]):
+        module.fail_json(msg="At least one of the following is required: device_ids, device_service_tags, "
+                             "device_names, device_idrac_ips device_group_names, or baseline_name to generate "
+                             "device based compliance report.")
 
 
 def main():
@@ -364,36 +308,47 @@ def main():
             "port": {"required": False, "type": 'int', "default": 443},
             "baseline_name": {"type": 'str', "required": False},
             "device_service_tags": {"required": False, "type": "list", "elements": 'str'},
+            "device_names": {"required": False, "type": "list", "elements": 'str'},
+            "device_idrac_ips": {"required": False, "type": "list", "elements": 'str'},
             "device_ids": {"required": False, "type": "list", "elements": 'int'},
             "device_group_names": {"required": False, "type": "list", "elements": 'str'},
         },
-        mutually_exclusive=[['baseline_name', 'device_service_tags', 'device_ids', 'device_group_names']],
+        #mutually_exclusive=[['baseline_name', 'device_service_tags', 'device_ids', 'device_group_names']], TODO should be just baseline id and the rest of this stuff
         required_one_of=[['device_ids', 'device_service_tags', 'device_group_names', 'baseline_name']],
         supports_check_mode=True
     )
     try:
 
-        target_ids = []
-
         validate_inputs(module)
         with RestOME(module.params, req_session=True) as rest_obj:
             baseline_name = module.params.get("baseline_name")
             if baseline_name is not None:
-                try:
-                    baseline_id = get_baseline_id_from_name(rest_obj, module)
-                    path = baselines_compliance_report_path.format(Id=baseline_id)
-                    resp = rest_obj.get_all_items_with_pagination(path)
-                    if resp.total_count > 0:
-                        resp_data = resp.json_data["value"]
-                    return resp_data
-                except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-                    raise err
+                # Get the device reports for the specified baseline
+                baseline_id = get_baseline_id_from_name(rest_obj, module)
+                path = baselines_compliance_report_path.format(Id=baseline_id)
+                resp = rest_obj.invoke_request('GET', path) # TODO this needs pagination
+                if resp.success:
+                    data = resp.json_data["value"]
+                else:
+                    module.fail_json("Failed to retrieve the compliance reports for baseline " + baseline_name)
             else:
-                data = get_baselines_report_by_device_ids(rest_obj, module)
+                # Get the baseline reports for the specified IDs
+                target_ids = rest_obj.get_targets(module.params.get("device_service_tags"),
+                                                  module.params.get("device_idrac_ips"),
+                                                  module.params.get("device_names"),
+                                                  module.params.get("device_group_names"))
+                if len(target_ids) > 0:
+                    resp = rest_obj.invoke_request('POST', baselines_report_by_device_ids_path, data={"Ids": target_ids}) # TODO this needs pagination
+                    # TODO need a failure check
+                    data = resp.json_data
+                else:
+                    module.fail_json(msg="There were no target IDs")
         if data:
             module.exit_json(baseline_compliance_info=data)
         else:
             module.fail_json(msg="Failed to fetch the compliance baseline information.")
+    except InputError as err:
+        module.fail_json(msg=str(err))
     except HTTPError as err:
         module.fail_json(msg=str(err), error_info=json.load(err))
     except (URLError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
