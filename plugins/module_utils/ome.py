@@ -14,8 +14,10 @@ __metaclass__ = type
 
 import json
 from ansible.module_utils.urls import open_url, ConnectionError, SSLValidationError
-from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError
-from ansible.module_utils.six.moves.urllib.parse import urlencode
+# from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError TODO
+from urllib.error import URLError, HTTPError
+# from ansible.module_utils.six.moves.urllib.parse import urlencode
+from urllib.parse import urlencode
 
 SESSION_RESOURCE_COLLECTION = {
     "SESSION": "SessionService/Sessions",
