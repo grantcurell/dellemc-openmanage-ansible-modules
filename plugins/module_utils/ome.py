@@ -221,6 +221,75 @@ class RestOME(object):
             device_id = device_info["Id"]
         return {"Id": device_id, "value": device_info}
 
+    def get_device_id(self,
+                      service_tag: str = None,
+                      device_idrac_ip: str = None,
+                      device_name: str = None) -> int:
+        """
+        Resolves a service tag, idrac IP or device name to a device ID
+
+        Args:
+            service_tag: (optional) The service tag of a host
+            device_idrac_ip: (optional) The idrac IP of a host
+            device_name: (optional): The name of a host
+
+        Returns: Returns the device ID or -1 if it couldn't be found
+        """
+
+        if not service_tag and not device_idrac_ip and not device_name:
+            print("No argument provided to get_device_id. Must provide service tag, device idrac IP or device name.")
+            return -1
+
+        # If the user passed a device name, resolve that name to a device ID
+        if device_name:
+            query = "DeviceName eq \'%s\'" % device_name
+            response = self.invoke_request("GET", "DeviceService/Devices", query_param={"$filter": query})
+            value = response.json_data.get("value", [])
+
+            if value:
+                device_id = value[0]['Id']
+            else:
+                return -1
+
+            device_id = device_id[0]['Id']
+
+        elif service_tag:
+            query = "DeviceServiceTag eq \'%s\'" % service_tag
+            response = self.invoke_request("GET", "DeviceService/Devices", query_param={"$filter": query})
+
+            value = response.json_data.get("value", [])
+
+            if value:
+                device_id = value[0]['Id']
+            else:
+                return -1
+
+            device_id = device_id[0]['Id']
+
+        elif device_idrac_ip:
+            device_id = -1
+            query = "DeviceManagement/any(d:d/NetworkAddress eq '%s')" % device_idrac_ip
+            response = self.invoke_request("GET", "DeviceService/Devices", query_param={"$filter": query})
+
+            value = response.json_data.get("value", [])
+
+            if value:
+                # TODO - This is necessary because the filter above could possibly return multiple results
+                # TODO - See https://github.com/dell/OpenManage-Enterprise/issues/87
+                for device_id in value:
+                    if device_id['DeviceManagement'][0]['NetworkAddress'] == device_idrac_ip:
+                        device_id = device_id['Id']
+            else:
+                return -1
+
+            if device_id == -1:
+                print("Error: We were unable to find idrac IP " + device_idrac_ip + " on this OME server. Exiting.")
+                return -1
+        else:
+            device_id = -1
+
+        return device_id
+
     def get_all_items_with_pagination(self, uri):
         """
          This implementation mainly to get all available items from ome for pagination
@@ -242,6 +311,43 @@ class RestOME(object):
             return {"total_count": total_count, "value": total_items}
         except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
             raise err
+
+    def get_targets(self, service_tags: str, idrac_ips: str, device_names: str):
+
+        target_ids = []
+
+        if service_tags:
+            service_tags = service_tags.split(',')
+            for service_tag in service_tags:
+                target = self.get_device_id_from_service_tag(service_tag)
+                if target != -1:
+                    target_ids.append(target)
+                else:
+                    print("Could not resolve ID for: " + service_tag)
+        else:
+            service_tags = None
+
+        if idrac_ips:
+            device_idrac_ips = idrac_ips.split(',')
+            for device_idrac_ip in device_idrac_ips:
+                target = get_device_id(headers, args.ip, device_idrac_ip=device_idrac_ip)
+                if target != -1:
+                    target_ids.append(target)
+                else:
+                    print("Could not resolve ID for: " + device_idrac_ip)
+        else:
+            device_idrac_ips = None
+
+        if args.device_names:
+            device_names = args.device_names.split(',')
+            for device_name in device_names:
+                target = get_device_id(headers, args.ip, device_name=device_name)
+                if target != -1:
+                    target_ids.append(target)
+                else:
+                    print("Could not resolve ID for: " + device_name)
+        else:
+            device_names = None
 
     def get_device_type(self):
         """

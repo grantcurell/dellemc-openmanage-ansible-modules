@@ -244,16 +244,14 @@ def _get_device_id_from_service_tags(service_tags, rest_obj, module):
     :returns: dict eg: {1345:"MXL1245"}
     """
     try:
-        resp = rest_obj.invoke_request('GET', device_is_list_path)
-        if resp.success:
-            devices_list = resp.json_data["value"]
-            service_tag_dict = {}
-            for item in devices_list:
-                if item["DeviceServiceTag"] in service_tags:
-                    service_tag_dict.update({item["Id"]: item["DeviceServiceTag"]})
-            return service_tag_dict
-        else:
-            module.fail_json(msg="Failed to fetch the device information.")
+        service_tag_dict = {}
+        for service_tag in service_tags:
+            device_id = rest_obj.get_device_id_from_service_tag(service_tag)
+            if device_id is not None:
+                service_tag_dict.update({device_id["Id"]: service_tag})
+                return service_tag_dict
+            else:
+                module.fail_json(msg="Failed to fetch the service tag " + service_tag)
     except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
         raise err
 
@@ -346,19 +344,6 @@ def get_baselines_report_by_device_ids(rest_obj, module):
         raise err
 
 
-def get_baseline_compliance_reports(rest_obj, module):
-    try:
-        baseline_id = get_baseline_id_from_name(rest_obj, module)
-        path = baselines_compliance_report_path.format(Id=baseline_id)
-        resp = rest_obj.invoke_request('GET', path)
-        resp_data = []
-        if resp.success:
-            resp_data = resp.json_data["value"]
-        return resp_data
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
-
-
 def validate_inputs(module):
     module_params = module.params
     device_service_tags = module_params.get("device_service_tags")
@@ -387,11 +372,22 @@ def main():
         supports_check_mode=True
     )
     try:
+
+        target_ids = []
+
         validate_inputs(module)
         with RestOME(module.params, req_session=True) as rest_obj:
             baseline_name = module.params.get("baseline_name")
             if baseline_name is not None:
-                data = get_baseline_compliance_reports(rest_obj, module)
+                try:
+                    baseline_id = get_baseline_id_from_name(rest_obj, module)
+                    path = baselines_compliance_report_path.format(Id=baseline_id)
+                    resp = rest_obj.get_all_items_with_pagination(path)
+                    if resp.total_count > 0:
+                        resp_data = resp.json_data["value"]
+                    return resp_data
+                except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
+                    raise err
             else:
                 data = get_baselines_report_by_device_ids(rest_obj, module)
         if data:
