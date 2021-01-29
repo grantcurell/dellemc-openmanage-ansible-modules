@@ -253,34 +253,29 @@ def get_baseline_id_from_name(rest_obj: RestOME, module: AnsibleModule) -> int:
     """
     Resolves the name of a baseline to an ID
 
-    Args:
-        rest_obj: A RestOME object used for handling communication to OME
-        module: A handle to AnsibleModule allowing the module to issue error messages
-
-    Returns: The integer ID of the baseline
-
+    :param RestOME rest_obj: A RestOME object used for handling communication to OME
+    :param AnsibleModule module: A handle to AnsibleModule allowing the module to issue error messages
+    :return: The integer ID of the baseline
+    :rtype: int
     """
-    try:
-        baseline_name = module.params.get("baseline_name")
-        baseline_id = 0
-        if baseline_name is not None:
-            resp = rest_obj.invoke_request('GET', base_line_path)
-            if resp.success:
-                baseline_list = resp.json_data["value"]
-                if len(baseline_list) > 0:
-                    for baseline in baseline_list:
-                        if baseline["Name"] == baseline_name:
-                            baseline_id = baseline["Id"]
-                            break
-                    else:
-                        module.fail_json(msg="Specified I(baseline_name) does not exist in the system.")
+    baseline_name = module.params.get("baseline_name")
+    baseline_id = 0
+    if baseline_name is not None:
+        resp = rest_obj.invoke_request('GET', base_line_path)
+        if resp.success:
+            baseline_list = resp.json_data["value"]
+            if len(baseline_list) > 0:
+                for baseline in baseline_list:
+                    if baseline["Name"] == baseline_name:
+                        baseline_id = baseline["Id"]
+                        break
                 else:
-                    module.fail_json(msg="No baseline exists in the system.")
-        else:
-            module.fail_json(msg="I(baseline_name) is a mandatory option.")
-        return baseline_id
-    except (URLError, HTTPError, SSLValidationError, ConnectionError, TypeError, ValueError) as err:
-        raise err
+                    module.fail_json(msg="Specified I(baseline_name) does not exist in the system.")
+            else:
+                module.fail_json(msg="No baseline exists in the system.")
+    else:
+        module.fail_json(msg="I(baseline_name) is a mandatory option.")
+    return baseline_id
 
 
 def validate_inputs(module: AnsibleModule):
@@ -313,7 +308,11 @@ def main():
             "device_ids": {"required": False, "type": "list", "elements": 'int'},
             "device_group_names": {"required": False, "type": "list", "elements": 'str'},
         },
-        #mutually_exclusive=[['baseline_name', 'device_service_tags', 'device_ids', 'device_group_names']], TODO should be just baseline id and the rest of this stuff
+        mutually_exclusive=[('baseline_name', 'device_service_tags'),
+                            ('baseline_name', 'device_names'),
+                            ('baseline_name', 'device_idrac_ips'),
+                            ('baseline_name', 'device_ids'),
+                            ('baseline_name', 'device_group_names')],
         required_one_of=[['device_ids', 'device_service_tags', 'device_group_names', 'baseline_name']],
         supports_check_mode=True
     )
@@ -326,9 +325,9 @@ def main():
                 # Get the device reports for the specified baseline
                 baseline_id = get_baseline_id_from_name(rest_obj, module)
                 path = baselines_compliance_report_path.format(Id=baseline_id)
-                resp = rest_obj.invoke_request('GET', path) # TODO this needs pagination
-                if resp.success:
-                    data = resp.json_data["value"]
+                resp = rest_obj.get_all_items_with_pagination(path)
+                if 'value' in resp:
+                    data = resp["value"]
                 else:
                     module.fail_json("Failed to retrieve the compliance reports for baseline " + baseline_name)
             else:
@@ -338,9 +337,12 @@ def main():
                                                   module.params.get("device_names"),
                                                   module.params.get("device_group_names"))
                 if len(target_ids) > 0:
-                    resp = rest_obj.invoke_request('POST', baselines_report_by_device_ids_path, data={"Ids": target_ids}) # TODO this needs pagination
-                    # TODO need a failure check
-                    data = resp.json_data
+                    resp = rest_obj.invoke_request('POST', baselines_report_by_device_ids_path,
+                                                   data={"Ids": target_ids})
+                    if resp.success:
+                        data = resp.json_data
+                    else:
+                        module.fail_json("Failed to retrieve the compliance reports.")
                 else:
                     module.fail_json(msg="There were no target IDs")
         if data:

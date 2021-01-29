@@ -36,6 +36,7 @@ class InputError(Exception):
     def __init__(self, message):
         self.message = message
 
+
 class OpenURLResponse(object):
     """Handles HTTPResponse"""
 
@@ -239,12 +240,11 @@ class RestOME(object):
         """
         Resolves a service tag, idrac IP or device name to a device ID
 
-        Args:
-            service_tag: The service tag of a host
-            device_idrac_ip: The idrac IP of a host
-            device_name: The name of a host
-
-        Returns: Returns the device ID or -1 if it couldn't be found
+        :param str service_tag: The service tag of a host
+        :param str device_idrac_ip: The idrac IP of a host
+        :param str device_name: The name of a host
+        :rtype: int
+        :return: Returns the device ID or -1 if it couldn't be found
         """
 
         # If the user passed a device name, resolve that name to a device ID
@@ -286,19 +286,21 @@ class RestOME(object):
                 return -1
 
             if device_id == -1:
-                print("Error: We were unable to find idrac IP " + device_idrac_ip + " on this OME server. Exiting.")
-                return -1
+                raise InputError("Error: We were unable to find idrac IP " + device_idrac_ip +
+                                 " on this OME server. Exiting.")
         else:
             device_id = -1
 
         return device_id
 
-    def get_all_items_with_pagination(self, uri):
+    def get_all_items_with_pagination(self, uri: str) -> dict:
         """
          This implementation mainly to get all available items from ome for pagination
          supported GET uri
-        :param uri: uri which supports pagination
-        :return: dict.
+
+        :param str uri: uri which supports pagination
+        :rtype: dict
+        :return: Returns a dictionary with the requested data
         """
         try:
             resp = self.invoke_request('GET', uri)
@@ -320,13 +322,12 @@ class RestOME(object):
         """
         Converts the below types of input into numerical IDs which OME can consume
 
-        Args:
-            service_tags: A list of service tags to convert to IDs
-            idrac_ips: A list of idrac_ips to convert to IDs
-            device_names: A list of device names to convert to IDs
-            groups: A list of groups from which to pull device IDs
-
-        Returns: A list of ints where each int is a device ID
+        :param list service_tags: A list of service tags to convert to IDs
+        :param list idrac_ips: A list of idrac_ips to convert to IDs
+        :param list device_names: A list of device names to convert to IDs
+        :param list groups: A list of groups from which to pull device IDs
+        :rtype list:
+        :return: A list of ints where each int is a device ID
 
         """
 
@@ -360,21 +361,24 @@ class RestOME(object):
 
             for group in groups:
 
+                # Get the ID corresponding to the group name
                 query = "Name eq '%s'" % group
                 response = self.invoke_request("GET", "GroupService/Groups", query_param={"$filter": query})
-                value = response.json_data.get("value", [])
+                group_response = response.json_data.get("value", [])
 
-                if len(value) < 1:
+                if len(group_response) < 1:
                     raise InputError("No groups were found with name " + group)
 
-                response = self.get_all_items_with_pagination("GroupService/Groups/(%s)/Devices" % value[0]['Id']) #TODO NEED TO test
-                value = response.get("value", [])
+                response = self.get_all_items_with_pagination("GroupService/Groups(%s)/Devices"
+                                                              % group_response[0]['Id'])
+                group_devices = response.get("value", [])
 
-                if len(value) < 1:
+                if len(group_devices) < 1:
                     raise InputError("Error: There was a problem retrieving the devices for group " + group +
                                      ". Exiting")
 
-                target_ids = target_ids + value
+                for device in group_devices:
+                    target_ids.append(device['Id'])
 
         # Eliminate any duplicate IDs in the list
         target_ids = list(dict.fromkeys(target_ids))
