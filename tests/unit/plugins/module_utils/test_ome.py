@@ -16,9 +16,12 @@ __metaclass__ = type
 
 import pytest
 from ansible.module_utils.urls import ConnectionError, SSLValidationError
-from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError
+#from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError
+from urllib.error import URLError, HTTPError
 from ansible_collections.dellemc.openmanage.plugins.module_utils.ome import RestOME
-from ansible_collections.dellemc.openmanage.tests.unit.compat.mock import MagicMock
+#from ansible_collections.dellemc.openmanage.tests.unit.compat.mock import MagicMock
+from unittest.mock import MagicMock
+
 import json
 
 MODULE_UTIL_PATH = 'ansible_collections.dellemc.openmanage.plugins.module_utils.'

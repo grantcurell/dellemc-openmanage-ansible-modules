@@ -233,11 +233,9 @@ error_info:
 
 import json
 from ansible.module_utils.basic import AnsibleModule
-# from ansible_collections.dellemc.openmanage.plugins.module_utils.ome import RestOME TODO - change this back
-from plugins.module_utils.ome import RestOME
+from ansible_collections.dellemc.openmanage.plugins.module_utils.ome import RestOME
 from plugins.module_utils.ome import InputError
-# TODO - need to add InputError here
-# from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError TODO - change this back
+#from ansible.module_utils.six.moves.urllib.error import URLError, HTTPError
 from urllib.error import URLError, HTTPError
 from ansible.module_utils.urls import ConnectionError, SSLValidationError
 
